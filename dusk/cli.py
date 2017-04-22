@@ -5,6 +5,7 @@ import logging
 import sys
 
 from . import __version__
+import profiler
 
 
 def parse_arguments(args):
@@ -22,7 +23,7 @@ def parse_arguments(args):
     parser.add_argument(
         "-n", "--document-name", help="name of the ssm document to run"
     )
-    parser.add_argument("instance-id", help="id of the instance to terminate")
+    parser.add_argument("instance_id", help="id of the instance to terminate")
 
     return parser.parse_args(args)
 
@@ -47,9 +48,8 @@ def setup_logger(debug):
 def cli():
     arguments = parse_arguments(sys.argv[1:])
     setup_logger(arguments.debug)
+    main(arguments.instance_id)
 
-    main()
 
-
-def main():
-    pass
+def main(instance_id):
+    profiler.run(instance_id)
