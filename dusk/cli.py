@@ -19,6 +19,9 @@ def parse_arguments(args):
         "-v", "--version", action="version",
         version="ptolemy version {0}".format(__version__)
     )
+    parser.add_argument(
+        "-n", "--document-name", help="name of the ssm document to run"
+    )
     parser.add_argument("instance-id", help="id of the instance to terminate")
 
     return parser.parse_args(args)
