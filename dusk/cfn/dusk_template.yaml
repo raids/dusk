@@ -1,0 +1,123 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Resources for dusk terminator
+
+Parameters:
+  TargetInstanceId:
+    Description: Instance ID which the function will terminate at the scheduled time.
+    Type: String
+  SceduleExpression:
+    Description: Cron expression for the Cloudwatch Event Rule (e.g. "cron(45 7 23 4 ? 2017)")
+    Type: String
+  
+Resources:
+  FunctionIamRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'lambda.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+      - PolicyName: logs
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogGroup'
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            - 'logs:DescribeLogStreams'
+            Resource:
+            - 'arn:aws:logs:*:*:*'
+      - PolicyName: ssm
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+              - 'ssm:*'
+            Resource:
+            - '*'
+  AllowTerminationIamPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: "dusk_terimanator"
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Action: "ec2:TerminateInstances"
+            Resource: !Join [ "", [ "arn:aws:ec2:", !Ref "AWS::Region", ":", !Ref "AWS::AccountId" , ":instance/", !Ref TargetInstanceId ] ]
+          - Effect: "Allow"
+            Action: "cloudformation:DeleteStack"
+            Resource: !Join [ "", [ "arn:aws:cloudformation:", !Ref "AWS::Region", ":", !Ref "AWS::AccountId" , ":stack/", !Ref "AWS::StackName", "/*" ] ]
+          - Effect: "Allow"
+            Action:
+            - "lambda:RemovePermission"
+            - "lambda:DeleteFunction"
+            Resource: "*"
+          - Effect: "Allow"
+            Action: "iam:Delete*"
+            Resource: "*"
+          - Effect: "Allow"
+            Action: "events:RemoveTargets"
+            Resource: "*"
+      Roles: 
+        - !Ref FunctionIamRole
+  DuskTerminatorLambdaFunction: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.lambda_handler"
+      Role: !GetAtt "FunctionIamRole.Arn"
+      Code: 
+        ZipFile: |
+          import boto3
+          import os
+          def lambda_handler(event, context):
+              ec2 = boto3.resource("ec2")
+              cloudformation = boto3.resource('cloudformation')
+              instance_id = os.environ["INSTANCE_ID"]
+              stack_name = os.environ["STACK_NAME"]
+              instance = ec2.Instance(instance_id)
+              print instance.terminate()
+              stack = cloudformation.Stack(stack_name)
+              print stack.delete()
+      Runtime: "python2.7"
+      Timeout: "60"
+      Environment:
+        Variables:
+          INSTANCE_ID: !Ref TargetInstanceId
+          STACK_NAME: !Ref "AWS::StackName"
+  ScheduledRule: 
+    Type: "AWS::Events::Rule"
+    Properties: 
+      Description: "ScheduledRule"
+      ScheduleExpression: !Ref SceduleExpression
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: !GetAtt "DuskTerminatorLambdaFunction.Arn"
+          Id: "TargetFunctionV1"
+  PermissionForEventsToInvokeLambda: 
+    Type: "AWS::Lambda::Permission"
+    Properties: 
+      FunctionName: 
+        Ref: "DuskTerminatorLambdaFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt "ScheduledRule.Arn"
+
+# Outputs:
+  # AdminUsername:
+  #   Description: 'User name for the Jenkins admin.'
+  #   Value: admin
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-AdminUsername'
